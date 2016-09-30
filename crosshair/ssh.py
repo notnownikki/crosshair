@@ -1,3 +1,4 @@
+import os
 try:
     import socketserver
 except ImportError:
@@ -18,23 +19,25 @@ class SSHServer(
         paramiko.ServerInterface):
     host_key = None
 
-    def __init__(self, host_key_fname, address):
+    def __init__(self, host_key_fname, public_keys_path, address):
         socketserver.TCPServer.__init__(self, address, SSHHandler)
+        SSHServer.host_key = self._load_key_from_file(host_key_fname)
+        SSHServer.public_keys_path = public_keys_path
+
+    def _load_key_from_file(self, filename):
         # try each type of key paramiko supports. If we ever get another
         # key type, we should make this prettier.
         try:
-            SSHServer.host_key = paramiko.ECDSAKey(
-                filename=host_key_fname)
+            key = paramiko.ECDSAKey(filename=filename)
         except paramiko.ssh_exception.SSHException:
             try:
-                SSHServer.host_key = paramiko.DSSKey(
-                    filename=host_key_fname)
+                key = paramiko.DSSKey(filename=filename)
             except paramiko.ssh_exception.SSHException:
                 try:
-                    SSHServer.host_key = paramiko.RSAKey(
-                        filename=host_key_fname)
+                    key = paramiko.RSAKey(filename=filename)
                 except paramiko.ssh_exception.SSHException:
                     raise UnknownKeyTypeException()
+        return key
 
     def check_channel_request(self, kind, chanid):
         if kind == 'session':
@@ -54,3 +57,14 @@ class SSHServer(
     def check_channel_pty_request(self, channel, term, width, height,
                                   pixelwidth, pixelheight, modes):
         return False
+
+    def check_auth_publickey(self, username, key):
+        key_path = os.path.join(self.public_keys_path, username) + '.pub'
+        try:
+            with open(key_path, 'r') as pub_key_file:
+                pub_key_base64 = pub_key_file.read().strip().split(' ')[1]
+        except IOError:
+            return paramiko.AUTH_FAILED
+        if key.get_base64() == pub_key_base64:
+            return paramiko.AUTH_SUCCESSFUL
+        return paramiko.AUTH_FAILED
