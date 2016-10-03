@@ -66,7 +66,7 @@ help
 list-commands
 reload-plugins
 $ ssh -p 9045 -i ./admin admin@192.168.0.42 help list-commands
-usgae: list-commands
+usage: list-commands
 $ ssh -p 9045 -i ./admin admin@192.168.0.42 reload-plugins
 Plugins reloaded.
 ```
