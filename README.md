@@ -1,7 +1,7 @@
 Crosshair
 =========
 
-Issue commands to your python app and manage its code using SSH!
+Issue commands to your python app and reload its code on demand using SSH.
 
 Features
 --------
