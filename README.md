@@ -90,7 +90,7 @@ Writing Command Plugins
 Commands should extend `crosshair.commands.Command`, and implement the following methods:
 
 * execute(_self, channel_): run the command, sending any output to `channel` using `channel.send`
-* setup_parser(): Initialise `self.parser` with an argument parser that extends `crosshair.commands.ArgumentParser`, which is a standard Python `argparse.ArgumentParser` with slightly altered error handling
+* setup_parser(_self_): Initialise `self.parser` with an argument parser that extends `crosshair.commands.ArgumentParser`, which is a standard Python `argparse.ArgumentParser` with slightly altered error handling
 
 Once you have written your commands, register them with the plugin handler.
 
