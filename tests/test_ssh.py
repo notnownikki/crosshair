@@ -1,27 +1,19 @@
 try:
-    from socketserver import TCPServer
+    from socketserver import TCPServer, StreamRequestHandler
 except ImportError:
-    from SocketServer import TCPServer
+    from SocketServer import TCPServer, StreamRequestHandler
 import testtools
 import paramiko
-from mock import Mock, patch
+from mock import Mock, MagicMock, patch
+from crosshair import plugins
 from crosshair.ssh import SSHHandler, SSHServer
 
 
-class TestableHandler(SSHHandler):
-    def __init__(self):
-        # The SSHHandler is a stream request handler that expects all
-        # kinds of request related things. Instead of mocking it, this
-        # class allows us to supply things in a more readable way.
-        # Don't judge me.
-        pass
-
-
-class SSHTestCase(testtools.TestCase):
+class SSHServerTestCase(testtools.TestCase):
     @patch.object(TCPServer, '__init__')
-    def setUp(self, mock_init):
-        super(SSHTestCase, self).setUp()
-        self.handler = TestableHandler()
+    def setUp(self, mock_tcp_init):
+        super(SSHServerTestCase, self).setUp()
+        mock_tcp_init.return_value = None
         self.server = SSHServer(
             'tests/data/host_key', 'tests/data/public_keys',
             ('0.0.0.0', 4022))
@@ -62,11 +54,107 @@ class SSHTestCase(testtools.TestCase):
             paramiko.AUTH_FAILED,
             self.server.check_auth_publickey('idonotexist', key))
 
-    def test_getting_command_times_out(self):
-        pass
 
-    def test_channel_failure_closes_transport(self):
-        pass
+class SSHHandlerTestCase(testtools.TestCase):
+    @patch.object(StreamRequestHandler, '__init__')
+    def setUp(self, mock_stream_init):
+        super(SSHHandlerTestCase, self).setUp()
+        mock_stream_init.return_value = None
+        self.handler = SSHHandler()
+        self.handler.server = Mock()
+        self.handler.server.host_key = 'A Key'
+        self.handler.request = ('0.0.0.0', 4022)
 
-    def test_command_executed(self):
-        pass
+    @patch.object(SSHHandler, 'do_command')
+    @patch.object(paramiko, 'Transport')
+    def test_transport_constructed(self, mock_transport, mock_do_com):
+        mock_transport.return_value = Mock()
+        self.handler.handle()
+        mock_transport.assert_called_once_with(('0.0.0.0', 4022))
+
+    @patch.object(SSHHandler, 'do_command')
+    @patch.object(paramiko, 'Transport')
+    def test_host_key_set_on_transport(self, mock_transport, mock_do_com):
+        transporter = Mock()
+        mock_transport.return_value = transporter
+        self.handler.handle()
+        transporter.add_server_key.assert_called_once_with('A Key')
+
+    @patch.object(SSHHandler, 'do_command')
+    @patch.object(paramiko, 'Transport')
+    def test_server_gets_started(self, mock_transport, mock_do_com):
+        transporter = Mock()
+        mock_transport.return_value = transporter
+        self.handler.handle()
+        transporter.start_server.assert_called_once_with(
+            server=self.handler.server)
+
+    @patch.object(SSHHandler, 'do_command')
+    @patch.object(paramiko, 'Transport')
+    def test_getting_command_timeout(self, mock_transport, mock_do_com):
+        transporter = Mock()
+        mock_transport.return_value = transporter
+        channel = Mock()
+        # no command will be set
+        channel.crosshair_command = False
+        transporter.accept.return_value = channel
+        self.handler.accept_timeout = 0.1
+        self.handler.wait_time = 0.2
+        self.handler.handle()
+        # accept the channel
+        transporter.accept.assert_called_once_with(
+            self.handler.accept_timeout)
+        # no command, so just close the transport
+        transporter.close.assert_called_once()
+        
+    @patch.object(SSHHandler, 'do_command')
+    @patch.object(paramiko, 'Transport')
+    def test_channel_failure_closes_transport(self, mock_transport, mock_do_com):
+        transporter = Mock()
+        mock_transport.return_value = transporter
+        transporter.accept.return_value = None
+        self.handler.handle()
+        transporter.accept.assert_called_once_with(
+            self.handler.accept_timeout)
+        # no channel, transport should get closed
+        transporter.close.assert_called_once()
+
+    @patch.object(SSHHandler, 'do_command')
+    @patch.object(paramiko, 'Transport')
+    def test_command_executed(self, mock_transport, mock_do_command):
+        transporter = Mock()
+        mock_transport.return_value = transporter
+        channel = Mock()
+        channel.crosshair_command = 'list-commands'
+        transporter.accept.return_value = channel
+        self.handler.handle()
+        mock_do_command.assert_called_once_with('list-commands', channel)
+
+    @patch.object(plugins, 'get_command_handler')
+    def test_command_help_on_bad_args(self, mock_get_command):
+        mock_command = Mock()
+        mock_channel = Mock()
+        mock_get_command.return_value = mock_command
+        mock_command.parse_args.return_value = False
+        self.handler.do_command('list-commands 1 2 3 4', mock_channel)
+        mock_get_command.assert_called_once_with('list-commands')
+        mock_command.parse_args.assert_called_once_with('1 2 3 4')
+        mock_command.help.assert_called_once_with(mock_channel)
+
+    @patch.object(plugins, 'get_command_handler')
+    def test_command_execute(self, mock_get_command):
+        mock_command = Mock()
+        mock_channel = Mock()
+        mock_get_command.return_value = mock_command
+        mock_command.parse_args.return_value = True
+        self.handler.do_command('list-commands 1 2 3 4', mock_channel)
+        mock_get_command.assert_called_once_with('list-commands')
+        mock_command.execute.assert_called_once_with(mock_channel)
+
+    @patch.object(plugins, 'get_command_handler')
+    def test_command_not_found(self, mock_get_command):
+        mock_channel = Mock()
+        mock_get_command.return_value = None
+        self.handler.do_command('list-commands 1 2 3 4', mock_channel)
+        mock_get_command.assert_called_once_with('list-commands')
+        mock_channel.send.assert_called_once_with('Command not found.\n')

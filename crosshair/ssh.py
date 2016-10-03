@@ -4,6 +4,8 @@ try:
 except ImportError:
     import SocketServer as socketserver
 import paramiko
+import time
+from crosshair import plugins
 
 
 class UnknownKeyTypeException(Exception):
@@ -11,13 +13,57 @@ class UnknownKeyTypeException(Exception):
 
 
 class SSHHandler(socketserver.StreamRequestHandler):
-    pass
+    accept_timeout = 20
+    wait_time = 1
+
+    def do_command(self, cli, channel):
+        cmd = cli.split(' ')[0]
+        args = ' '.join(cli.split(' ')[1:])
+        command = plugins.get_command_handler(cmd)
+
+        if not command:
+            channel.send('Command not found.\n')
+            return
+
+        if command.parse_args(args):
+            command.execute(channel)
+        else:
+            command.help(channel)
+
+    def handle(self, *args, **kwargs):
+        t = paramiko.Transport(self.request)
+        t.add_server_key(self.server.host_key)
+
+        # Note that this actually spawns a new thread to handle the requests.
+        # (paramiko.Transport is a subclass of Thread)
+        t.start_server(server=self.server)
+        channel = t.accept(self.accept_timeout)
+
+        if channel is None:
+            t.close()
+            return
+
+        time_taken = 0.0
+        while getattr(channel, 'crosshair_command', False) is False:
+            time.sleep(self.wait_time)
+            time_taken += self.wait_time
+            if time_taken > self.accept_timeout:
+                break
+
+        if getattr(channel, 'crosshair_command', False) is False:
+            t.close()
+            return
+
+        self.do_command(channel.crosshair_command, channel)
+        channel.close()
+        t.close()
 
 
 class SSHServer(
         socketserver.ThreadingMixIn, socketserver.TCPServer,
         paramiko.ServerInterface):
     host_key = None
+    public_keys_path = None
 
     def __init__(self, host_key_fname, public_keys_path, address):
         socketserver.TCPServer.__init__(self, address, SSHHandler)
