@@ -5,7 +5,7 @@ except ImportError:
     import SocketServer as socketserver
 import paramiko
 import time
-from crosshair import plugins
+from crosshair import shell
 
 
 class UnknownKeyTypeException(Exception):
@@ -17,18 +17,7 @@ class SSHHandler(socketserver.StreamRequestHandler):
     wait_time = 1
 
     def do_command(self, cli, channel):
-        cmd = cli.split(' ')[0]
-        args = ' '.join(cli.split(' ')[1:])
-        command = plugins.get_command_handler(cmd)
-
-        if not command:
-            channel.send('Command not found.\n')
-            return
-
-        if command.parse_args(args):
-            command.execute(channel)
-        else:
-            command.help(channel)
+        shell.do_command(cli, channel)
 
     def handle(self, *args, **kwargs):
         t = paramiko.Transport(self.request)
