@@ -4,6 +4,7 @@ try:
 except ImportError:
     import SocketServer as socketserver
 import paramiko
+import socket
 import time
 from crosshair import shell
 
@@ -19,7 +20,19 @@ class SSHHandler(socketserver.StreamRequestHandler):
     def do_command(self, cli, channel):
         shell.do_command(cli, channel)
 
+    def set_keepalive(self, after_idle_sec=1, interval_sec=3, max_fails=5):
+        """Set TCP keepalive on the request."""
+        self.request.setsockopt(
+            socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        self.request.setsockopt(
+            socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, after_idle_sec)
+        self.request.setsockopt(
+            socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, interval_sec)
+        self.request.setsockopt(
+            socket.IPPROTO_TCP, socket.TCP_KEEPCNT, max_fails)
+
     def handle(self, *args, **kwargs):
+        self.set_keepalive(self.request)
         t = paramiko.Transport(self.request)
         t.add_server_key(self.server.host_key)
 

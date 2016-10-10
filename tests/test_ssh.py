@@ -4,6 +4,7 @@ except ImportError:
     from SocketServer import TCPServer, StreamRequestHandler
 import testtools
 import paramiko
+import socket
 from mock import Mock, MagicMock, patch
 from crosshair import plugins
 from crosshair.ssh import SSHHandler, SSHServer
@@ -63,14 +64,15 @@ class SSHHandlerTestCase(testtools.TestCase):
         self.handler = SSHHandler()
         self.handler.server = Mock()
         self.handler.server.host_key = 'A Key'
-        self.handler.request = ('0.0.0.0', 4022)
+        self.request = Mock()
+        self.handler.request = self.request
 
     @patch.object(SSHHandler, 'do_command')
     @patch.object(paramiko, 'Transport')
     def test_transport_constructed(self, mock_transport, mock_do_com):
         mock_transport.return_value = Mock()
         self.handler.handle()
-        mock_transport.assert_called_once_with(('0.0.0.0', 4022))
+        mock_transport.assert_called_once_with(self.request)
 
     @patch.object(SSHHandler, 'do_command')
     @patch.object(paramiko, 'Transport')
@@ -107,6 +109,14 @@ class SSHHandlerTestCase(testtools.TestCase):
         # no command, so just close the transport
         transporter.close.assert_called_once()
         
+    @patch.object(SSHHandler, 'do_command')
+    @patch.object(paramiko, 'Transport')
+    def test_socket_options_set(self, mock_transport, mock_do_com):
+        transporter = Mock()
+        mock_transport.return_value = transporter
+        self.handler.handle()
+        self.assertTrue(self.handler.request.setsockopt.called)
+
     @patch.object(SSHHandler, 'do_command')
     @patch.object(paramiko, 'Transport')
     def test_channel_failure_closes_transport(self, mock_transport, mock_do_com):
