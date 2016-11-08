@@ -32,7 +32,7 @@ class SSHHandler(socketserver.StreamRequestHandler):
             socket.IPPROTO_TCP, socket.TCP_KEEPCNT, max_fails)
 
     def handle(self, *args, **kwargs):
-        self.set_keepalive(self.request)
+        self.set_keepalive()
         t = paramiko.Transport(self.request)
         t.add_server_key(self.server.host_key)
 
